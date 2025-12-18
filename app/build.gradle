@@ -20,14 +20,14 @@ android {
         release {
             def keystoreFile = System.getenv("KEYSTORE_FILE")
             def keystorePassword = System.getenv("KEYSTORE_PASSWORD")
-            def keyAlias = System.getenv("KEY_ALIAS")
-            def keyPassword = System.getenv("KEY_PASSWORD")
+            def alias = System.getenv("KEY_ALIAS")
+            def aliasPass = System.getenv("KEY_PASSWORD")
 
             if (keystoreFile != null && keystorePassword != null) {
                 storeFile file(keystoreFile)
                 storePassword keystorePassword
-                if (keyAlias != null) keyAlias keyAlias
-                if (keyPassword != null) keyPassword keyPassword
+                if (alias != null) keyAlias = alias
+                if (aliasPass != null) keyPassword = aliasPass
             }
         }
     }
