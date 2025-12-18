@@ -4,33 +4,41 @@ plugins {
 }
 
 android {
-    namespace 'com.yureitzk.nophotopickerapi'
-    compileSdk {
-        version = release(36)
-    }
+    namespace = "com.yureitzk.nophotopickerapi"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId "com.yureitzk.nophotopickerapi"
-        minSdk 30
-        targetSdk 36
-        versionCode 1
-        versionName "0.2"
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        applicationId = "com.yureitzk.nophotopickerapi"
+        minSdk = 30
+        targetSdk = 36
+        versionCode = 1
+        versionName = "0.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("KEYSTORE_FILE") ?: "release.keystore")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+        release {
+            def keystoreFile = System.getenv("KEYSTORE_FILE")
+            def keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+            def keyAlias = System.getenv("KEY_ALIAS")
+            def keyPassword = System.getenv("KEY_PASSWORD")
+
+            if (keystoreFile != null && keystorePassword != null) {
+                storeFile file(keystoreFile)
+                storePassword keystorePassword
+                if (keyAlias != null) keyAlias keyAlias
+                if (keyPassword != null) keyPassword keyPassword
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            def releaseConfig = signingConfigs.findByName("release")
+            if (releaseConfig?.storeFile?.exists()) {
+                signingConfig = releaseConfig
+            }
+
             minifyEnabled true
             shrinkResources true
             proguardFiles(
@@ -52,11 +60,12 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 }
 
 dependencies {
-    compileOnly 'de.robv.android.xposed:api:82'
+    compileOnly("de.robv.android.xposed:api:82")
 }
