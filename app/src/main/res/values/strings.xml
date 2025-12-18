@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">NoPhotoPickerAPI</string>
+	<string name="app_description">Bypasses the Android Photo Picker API and lets apps use the classic document/file picker</string>
+</resources>
