@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.ext.SdkExtensions
 import android.provider.MediaStore
+import android.util.Log
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -15,6 +16,7 @@ class MainHook : IXposedHookLoadPackage {
 
     companion object {
         private const val TAG = "NoPhotoPicker"
+        private const val FLAG = "x_handled_by_nophoto"
     }
 
     fun XC_LoadPackage.LoadPackageParam.isSystemFramework(): Boolean {
@@ -27,6 +29,7 @@ class MainHook : IXposedHookLoadPackage {
                 hookSystemServices(lpparam)
             }
             lpparam.packageName != null -> {
+                hookInstrumentation(lpparam)
                 hookActivity(lpparam)
                 hookActivityResult(lpparam)
             }
@@ -34,7 +37,6 @@ class MainHook : IXposedHookLoadPackage {
     }
 
     private fun hookSystemServices(lpparam: XC_LoadPackage.LoadPackageParam) {
-        // Try to find which service class exists
         val classLoader = lpparam.classLoader
         val serviceClasses = listOf(
             "com.android.server.wm.ActivityTaskManagerService",
@@ -50,9 +52,37 @@ class MainHook : IXposedHookLoadPackage {
                     "startActivity",
                     createIntentInterceptor("System:$className")
                 )
-                XposedBridge.log("$TAG: Hooked $className")
+
+                Log.d(TAG, "Hooked $className")
                 return
             }
+        }
+    }
+    private fun hookInstrumentation(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                android.app.Instrumentation::class.java,
+                "execStartActivity",
+                android.content.Context::class.java,
+                android.os.IBinder::class.java,
+                android.os.IBinder::class.java,
+                Activity::class.java,
+                Intent::class.java,
+                Int::class.javaPrimitiveType,
+                android.os.Bundle::class.java,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val intent = param.args[4] as? Intent ?: return
+                        if (isPhotoPickerIntent(intent)) {
+                            logIntentDetails(intent, "Instrumentation.execStartActivity")
+                            param.args[4] = buildDocumentPickerIntent(intent)
+                        }
+                    }
+                }
+            )
+            Log.d(TAG, "Hooked Instrumentation for ${lpparam.packageName}")
+        } catch (t: Throwable) {
+            XposedBridge.log("$TAG: Failed to hook Instrumentation: ${t.message}")
         }
     }
 
@@ -63,9 +93,18 @@ class MainHook : IXposedHookLoadPackage {
                 for (i in args.indices) {
                     if (args[i] is Intent) {
                         val intent = args[i] as Intent
+
                         if (isPhotoPickerIntent(intent)) {
                             logIntentDetails(intent, "$source.startActivity")
-                            args[i] = buildDocumentPickerIntent(intent)
+
+                            val newIntent = buildDocumentPickerIntent(intent)
+
+                            args[i] = newIntent
+
+                            if (i + 1 < args.size && (args[i + 1] == null || args[i + 1] is String)) {
+                                val newType = newIntent.type ?: "*/*"
+                                args[i + 1] = newType
+                                Log.d(TAG, "Updated resolvedType to $newType")                            }
                             return
                         }
                     }
@@ -83,6 +122,9 @@ class MainHook : IXposedHookLoadPackage {
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val intent = param.args[0] as? Intent ?: return
+
+                        if (intent.hasExtra(FLAG)) return
+
                         if (isPhotoPickerIntent(intent)) {
                             logIntentDetails(intent, "App.Activity.startActivity")
                             param.args[0] = buildDocumentPickerIntent(intent)
@@ -107,7 +149,7 @@ class MainHook : IXposedHookLoadPackage {
                 }
             )
 
-            XposedBridge.log("$TAG: Successfully hooked Activity methods for ${lpparam.packageName}")
+            Log.d(TAG, "Successfully hooked Activity methods for ${lpparam.packageName}")
         } catch (t: Throwable) {
             XposedBridge.log("$TAG: Failed to hook Activity: ${t.message}")
         }
@@ -141,7 +183,7 @@ class MainHook : IXposedHookLoadPackage {
                         }
 
                         if (!hasContent) {
-                            XposedBridge.log("$TAG: Empty result detected for request $requestCode")
+                            Log.d(TAG, "Empty result detected for request $requestCode")
                             param.args[1] = Activity.RESULT_CANCELED
                             param.args[2] = null
                         }
@@ -165,6 +207,7 @@ class MainHook : IXposedHookLoadPackage {
     }
 
     private fun isPhotoPickerIntent(intent: Intent): Boolean {
+        if (intent.hasExtra(FLAG)) return false
         return when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
                 intent.action == MediaStore.ACTION_PICK_IMAGES
@@ -177,8 +220,8 @@ class MainHook : IXposedHookLoadPackage {
     }
 
     private fun logIntentDetails(intent: Intent, source: String) {
-        XposedBridge.log("$TAG: [$source] Photo picker detected")
-        XposedBridge.log("  Action: ${intent.action}")
+        Log.d(TAG, "[$source] Photo picker detected")
+        Log.d(TAG, "  Action: ${intent.action}")
     }
 
     private fun buildDocumentPickerIntent(original: Intent): Intent {
@@ -208,11 +251,12 @@ class MainHook : IXposedHookLoadPackage {
 
             if (shouldAllowMultiple) {
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                XposedBridge.log("$TAG: Multi-select enabled")
+                Log.d(TAG, "Multi-select enabled")
             }
 
+            putExtra(FLAG, true)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            XposedBridge.log("$TAG: Created document picker intent")
+            Log.d(TAG, "Created document picker intent")
         }
     }
 }
