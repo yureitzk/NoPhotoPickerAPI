@@ -58,47 +58,17 @@ class MainHook : IXposedHookLoadPackage {
             }
         }
     }
-    private fun hookInstrumentation(lpparam: XC_LoadPackage.LoadPackageParam) {
-        try {
-            XposedHelpers.findAndHookMethod(
-                android.app.Instrumentation::class.java,
-                "execStartActivity",
-                android.content.Context::class.java,
-                android.os.IBinder::class.java,
-                android.os.IBinder::class.java,
-                Activity::class.java,
-                Intent::class.java,
-                Int::class.javaPrimitiveType,
-                android.os.Bundle::class.java,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val intent = param.args[4] as? Intent ?: return
-                        if (isPhotoPickerIntent(intent)) {
-                            logIntentDetails(intent, "Instrumentation.execStartActivity")
-                            param.args[4] = buildDocumentPickerIntent(intent)
-                        }
-                    }
-                }
-            )
-            Log.d(TAG, "Hooked Instrumentation for ${lpparam.packageName}")
-        } catch (t: Throwable) {
-            XposedBridge.log("$TAG: Failed to hook Instrumentation: ${t.message}")
-        }
-    }
 
     private fun createIntentInterceptor(source: String): XC_MethodHook {
         return object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val args = param.args
+                val args = param.args ?: return
                 for (i in args.indices) {
                     if (args[i] is Intent) {
                         val intent = args[i] as Intent
-
                         if (isPhotoPickerIntent(intent)) {
-                            logIntentDetails(intent, "$source.startActivity")
-
+                            logIntentDetails(intent, source)
                             val newIntent = buildDocumentPickerIntent(intent)
-
                             args[i] = newIntent
 
                             if (i + 1 < args.size && (args[i + 1] == null || args[i + 1] is String)) {
@@ -113,42 +83,30 @@ class MainHook : IXposedHookLoadPackage {
         }
     }
 
+    private fun hookInstrumentation(lpparam: XC_LoadPackage.LoadPackageParam) {
+        try {
+            XposedBridge.hookAllMethods(
+                android.app.Instrumentation::class.java,
+                "execStartActivity",
+                createIntentInterceptor("Instrumentation.execStartActivity")
+            )
+            Log.d(TAG, "Hooked Instrumentation for ${lpparam.packageName}")
+        } catch (t: Throwable) {
+            XposedBridge.log("$TAG: Failed to hook Instrumentation: ${t.message}")
+        }
+    }
+
     private fun hookActivity(lpparam: XC_LoadPackage.LoadPackageParam) {
         try {
-            XposedHelpers.findAndHookMethod(
-                Activity::class.java,
-                "startActivity",
-                Intent::class.java,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val intent = param.args[0] as? Intent ?: return
+            val activityMethods = listOf("startActivity", "startActivityForResult")
 
-                        if (intent.hasExtra(FLAG)) return
-
-                        if (isPhotoPickerIntent(intent)) {
-                            logIntentDetails(intent, "App.Activity.startActivity")
-                            param.args[0] = buildDocumentPickerIntent(intent)
-                        }
-                    }
-                }
-            )
-
-            XposedHelpers.findAndHookMethod(
-                Activity::class.java,
-                "startActivityForResult",
-                Intent::class.java,
-                Int::class.javaPrimitiveType,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val intent = param.args[0] as? Intent ?: return
-                        if (isPhotoPickerIntent(intent)) {
-                            logIntentDetails(intent, "App.startActivityForResult")
-                            param.args[0] = buildDocumentPickerIntent(intent)
-                        }
-                    }
-                }
-            )
-
+            for (methodName in activityMethods) {
+                XposedBridge.hookAllMethods(
+                    Activity::class.java,
+                    methodName,
+                    createIntentInterceptor("App.Activity.$methodName")
+                )
+            }
             Log.d(TAG, "Successfully hooked Activity methods for ${lpparam.packageName}")
         } catch (t: Throwable) {
             XposedBridge.log("$TAG: Failed to hook Activity: ${t.message}")
