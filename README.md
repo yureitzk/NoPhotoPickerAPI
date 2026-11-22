@@ -25,7 +25,7 @@ and allow users to the classic document/file picker.
 
 ## Supported OSes
 
-- Android 11-15 (Custom ROMs are **not** supported)
+- Android 11-16 (Custom ROMs are **not** supported)
 
 ## Usage
 

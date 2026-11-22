@@ -11,6 +11,7 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import java.lang.reflect.Method
 
 class MainHook : IXposedHookLoadPackage {
 
@@ -71,10 +72,14 @@ class MainHook : IXposedHookLoadPackage {
                             val newIntent = buildDocumentPickerIntent(intent)
                             args[i] = newIntent
 
-                            if (i + 1 < args.size && (args[i + 1] == null || args[i + 1] is String)) {
+                            if (
+                                i + 1 < args.size &&
+                                (param.method as Method).parameterTypes[i + 1] == String::class.java
+                            ) {
                                 val newType = newIntent.type ?: "*/*"
                                 args[i + 1] = newType
-                                Log.d(TAG, "Updated resolvedType to $newType")                            }
+                                Log.d(TAG, "Updated resolvedType to $newType")
+                            }
                             return
                         }
                     }
@@ -183,19 +188,30 @@ class MainHook : IXposedHookLoadPackage {
     }
 
     private fun buildDocumentPickerIntent(original: Intent): Intent {
-        return Intent(Intent.ACTION_GET_CONTENT).apply {
+        return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
 
             // Handle MIME types
-            val mimeTypes = original.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)
+            val requestedMimeTypes = original.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)
+                ?: original.getStringArrayListExtra(Intent.EXTRA_MIME_TYPES)?.toTypedArray()
                 ?: original.getStringArrayExtra("android.provider.extra.MIME_TYPES")
                 ?: original.getStringArrayExtra("androidx.activity.result.contract.extra.PickVisualMedia.MimeType")
-                ?: arrayOf(original.type ?: "image/*")
+                ?: original.type?.let { arrayOf(it) }
+
+            val mimeTypes = if (
+                requestedMimeTypes == null || requestedMimeTypes.isEmpty() || "*/*" in requestedMimeTypes
+            ) {
+                arrayOf("image/*", "video/*")
+            } else {
+                requestedMimeTypes
+            }
 
             type = if (mimeTypes.size == 1) mimeTypes[0] else "*/*"
-            if (mimeTypes.size > 1 || mimeTypes[0] != type) {
+            if (mimeTypes.size > 1) {
                 putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
             }
+
+            putExtra(Intent.EXTRA_LOCAL_ONLY, original.getBooleanExtra(Intent.EXTRA_LOCAL_ONLY, false))
 
             // Handle multi-select with API compatibility
             val allowMultiple = original.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
